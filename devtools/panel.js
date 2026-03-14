@@ -2,7 +2,6 @@ let currentTabId = null;
 let session = createEmptySession();
 let selectedStepId = null;
 let activeTab = 'network';
-const SUMMARY_STEP_ID = '__session_summary__';
 
 const stepListEl = document.getElementById('step-list');
 const stepsEmptyEl = document.getElementById('steps-empty');
@@ -13,12 +12,10 @@ const stepCountEl = document.getElementById('step-count');
 const metricRecordedEl = document.getElementById('metric-recorded');
 const metricErrorsEl = document.getElementById('metric-errors');
 const metricShotsEl = document.getElementById('metric-shots');
-const exportBtnEl = document.getElementById('export-btn');
 
 document.getElementById('start-btn').addEventListener('click', startRecording);
 document.getElementById('stop-btn').addEventListener('click', stopRecording);
 document.getElementById('clear-btn').addEventListener('click', clearSession);
-document.getElementById('export-btn').addEventListener('click', exportSummary);
 
 document.querySelectorAll('.tab-btn').forEach((button) => {
     button.addEventListener('click', () => {
@@ -79,7 +76,7 @@ async function stopRecording() {
     const response = await sendBackgroundMessage('stop_recording');
     if (response?.ok) {
         session = response.session;
-        selectedStepId = SUMMARY_STEP_ID;
+        syncSelection();
         render();
     }
 }
@@ -126,17 +123,15 @@ function renderHeader() {
     metricRecordedEl.textContent = String(steps.length);
     metricErrorsEl.textContent = String(errorSteps);
     metricShotsEl.textContent = String(totalShots);
-    exportBtnEl.disabled = isRecording || steps.length === 0;
 }
 
 function renderStepList() {
     const steps = session.steps || [];
-    const items = getStepListItems();
     stepListEl.innerHTML = '';
 
-    stepsEmptyEl.classList.toggle('hidden', items.length > 0);
+    stepsEmptyEl.classList.toggle('hidden', steps.length > 0);
 
-    items.forEach((step) => {
+    steps.forEach((step) => {
         const item = document.createElement('li');
         item.className = `step-item${step.id === selectedStepId ? ' selected' : ''}`;
 
@@ -178,23 +173,16 @@ function renderDetails() {
     detailsEmptyEl.classList.add('hidden');
     detailsViewEl.classList.remove('hidden');
 
-    const isSummary = step.id === SUMMARY_STEP_ID;
-    document.getElementById('details-kicker').textContent = isSummary ? 'Recording Summary' : 'Selected Step';
+    document.getElementById('details-kicker').textContent = 'Selected Step';
     document.getElementById('step-title').textContent = step.title || 'Untitled action';
-    document.getElementById('details-subtitle').textContent = isSummary
-        ? 'A consolidated view of the recorded QA journey.'
-        : 'Focused inspection for the selected QA event.';
-    document.getElementById('step-time').textContent = isSummary
-        ? `${session.steps.length} steps`
-        : formatDateTime(step.timestamp);
-    document.getElementById('step-selector').textContent = isSummary
-        ? 'All recorded clicks in order'
-        : (step.selector || step.url || 'No selector');
+    document.getElementById('details-subtitle').textContent = 'Focused inspection for the selected QA event.';
+    document.getElementById('step-time').textContent = formatDateTime(step.timestamp);
+    document.getElementById('step-selector').textContent = step.selector || step.url || 'No selector';
     document.getElementById('network-count').textContent = String(step.network.length);
     document.getElementById('console-count').textContent = String(step.console.length);
     document.getElementById('screenshot-count').textContent = String(step.screenshots.length);
     document.getElementById('flow-count').textContent = String((session.steps || []).length);
-    document.getElementById('bug-report-count').textContent = String(getBugReportSignalCount(step));
+    document.getElementById('bug-report-count').textContent = String(getSessionBugCount());
 
     renderTabs();
 }
@@ -202,17 +190,10 @@ function renderDetails() {
 function renderTabs() {
     const step = getSelectedStep();
     if (!step) return;
-    const isSummary = step.id === SUMMARY_STEP_ID;
 
     document.querySelectorAll('.tab-btn').forEach((button) => {
-        const allowed = isSummary ? button.dataset.tab === 'steps' : true;
-        button.classList.toggle('hidden', !allowed);
-        button.classList.toggle('active', allowed && button.dataset.tab === activeTab);
+        button.classList.toggle('active', button.dataset.tab === activeTab);
     });
-
-    if (isSummary && activeTab !== 'steps') {
-        activeTab = 'steps';
-    }
 
     document.getElementById('tab-network').classList.toggle('hidden', activeTab !== 'network');
     document.getElementById('tab-console').classList.toggle('hidden', activeTab !== 'console');
@@ -342,20 +323,15 @@ function renderStepsTab() {
 }
 
 function renderBugReportTab(step) {
-    if (step.id === SUMMARY_STEP_ID) {
-        return `<div class="panel-empty">Bug report generation is available for individual failed steps.</div>`;
+    if (!getSessionBugCount()) {
+        return `<div class="panel-empty">The bug report will appear here once the session captures failure evidence.</div>`;
     }
 
-    if (!getBugReportSignalCount(step)) {
-        return `<div class="panel-empty">This step does not have enough failure evidence to generate a bug report yet.</div>`;
-    }
-
-    const report = buildBugReport(step);
+    const report = buildSessionBugReport();
     return `
         <div class="bug-report-shell">
             <div class="bug-report-actions">
                 <button type="button" id="copy-bug-report-btn">Copy Report</button>
-                <button type="button" id="download-bug-report-btn">Download TXT</button>
             </div>
             <pre class="bug-report-output">${escapeHtml(report)}</pre>
         </div>
@@ -363,14 +339,11 @@ function renderBugReportTab(step) {
 }
 
 function getSelectedStep() {
-    if (selectedStepId === SUMMARY_STEP_ID) {
-        return buildSummaryItem();
-    }
     return (session.steps || []).find((step) => step.id === selectedStepId) || null;
 }
 
 function syncSelection() {
-    const items = getStepListItems();
+    const items = session.steps || [];
     if (!items.length) {
         selectedStepId = null;
         return;
@@ -426,74 +399,58 @@ function getHost(url) {
     }
 }
 
-function getBugReportSignalCount(step) {
-    if (!step || step.id === SUMMARY_STEP_ID) return 0;
-    return step.network.length + step.console.length + step.screenshots.length;
+function getSessionBugCount() {
+    return (session.steps || []).filter((step) => step.network.length || step.console.length || step.screenshots.length).length;
 }
 
-function buildBugReport(step) {
-    const stepIndex = (session.steps || []).findIndex((item) => item.id === step.id);
-    const reproSteps = (session.steps || [])
-        .slice(0, stepIndex + 1)
-        .map((item, index) => `${index + 1}. ${item.title || 'Untitled action'}${item.selector ? ` (${item.selector})` : ''}`)
-        .join('\n');
-
-    const severity = inferSeverity(step);
-    const primaryFailure = getPrimaryFailure(step);
-    const expected = inferExpectedResult(step);
-    const actual = inferActualResult(step);
-    const evidence = buildEvidenceSection(step);
+function buildSessionBugReport() {
+    const steps = session.steps || [];
+    const failedSteps = steps.filter((step) => step.network.length || step.console.length || step.screenshots.length);
 
     return [
         'BUG REPORT',
         '',
-        `Title: ${buildBugTitle(step, primaryFailure)}`,
-        `Severity: ${severity}`,
-        `Environment: Browser QA Extension Session`,
-        `URL: ${step.url || '-'}`,
-        `Affected Component: ${step.title || '-'}${step.selector ? ` / ${step.selector}` : ''}`,
-        `Observed At: ${formatDateTime(step.timestamp)}`,
+        `Title: QA flow captured ${failedSteps.length} failed step(s) during session`,
+        `Suggested Severity: ${inferSessionSeverity(failedSteps, steps)}`,
+        'Environment: Browser QA Extension Session',
+        `Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`,
+        `Stopped: ${session.stoppedAt ? formatDateTime(session.stoppedAt) : '-'}`,
         '',
-        'Reproduction Steps:',
-        reproSteps || '-',
+        'Flow Steps:',
+        steps.map((item, index) => `${index + 1}. ${item.title || 'Untitled action'}${item.selector ? ` (${item.selector})` : ''}`).join('\n') || '-',
         '',
-        `Expected Result: ${expected}`,
-        `Actual Result: ${actual}`,
-        '',
-        'Technical Evidence:',
-        evidence,
-        '',
-        `Attachments: ${step.screenshots.length ? `${step.screenshots.length} screenshot(s) captured` : 'No screenshot captured'}`
+        'Observed Failures:',
+        failedSteps.map((step, index) => buildFailureBlock(step, index + 1)).join('\n\n') || '-'
     ].join('\n');
 }
 
-function buildBugTitle(step, primaryFailure) {
-    return `${step.title || 'Selected step'} fails with ${primaryFailure}`;
+function buildFailureBlock(step, order) {
+    return [
+        `${order}. ${step.title || 'Untitled action'}`,
+        `   Time: ${formatDateTime(step.timestamp)}`,
+        `   Component: ${step.selector || '-'}`,
+        `   Result: ${inferActualResult(step)}`,
+        `   Evidence:`,
+        indentBlock(buildEvidenceSection(step), '   ')
+    ].join('\n');
 }
 
-function inferSeverity(step) {
-    if (step.network.some((entry) => Number(entry.status) >= 500)) return 'High';
-    if (step.console.length && step.screenshots.length) return 'High';
-    if (step.network.some((entry) => Number(entry.status) >= 400)) return 'Medium';
-    return 'Medium';
-}
+function inferSessionSeverity(failedSteps, allSteps) {
+    if (failedSteps.some((step) => step.network.some((entry) => Number(entry.status) >= 500))) {
+        return 'High';
+    }
 
-function getPrimaryFailure(step) {
-    if (step.console.length) {
-        return step.console[0].title || 'frontend error';
+    const lastFailedStep = failedSteps[failedSteps.length - 1];
+    const lastStep = allSteps[allSteps.length - 1];
+    if (lastFailedStep && lastStep && lastFailedStep.id === lastStep.id && failedSteps.length === 1) {
+        return 'Medium';
     }
-    if (step.network.length) {
-        const first = step.network[0];
-        return `network error ${formatStatus(first)}`;
-    }
-    if (step.screenshots.length) {
-        return 'visual error evidence';
-    }
-    return 'failure evidence';
-}
 
-function inferExpectedResult(step) {
-    return `${step.title || 'Selected action'} should complete without frontend or backend errors.`;
+    if (failedSteps.length) {
+        return 'Low to Medium';
+    }
+
+    return 'Low';
 }
 
 function inferActualResult(step) {
@@ -509,6 +466,13 @@ function inferActualResult(step) {
         parts.push('Screenshot captured during failure.');
     }
     return parts.join(' ') || 'Failure evidence captured during the selected step.';
+}
+
+function indentBlock(text, prefix) {
+    return (text || '-')
+        .split('\n')
+        .map((line) => `${prefix}${line}`)
+        .join('\n');
 }
 
 function buildEvidenceSection(step) {
@@ -539,129 +503,6 @@ function buildEvidenceSection(step) {
     return lines.join('\n') || '-';
 }
 
-function exportSummary() {
-    if (session.isRecording || !(session.steps || []).length) return;
-
-    const text = buildExportText();
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const folderName = `qa-export-${Date.now()}`;
-
-    chrome.downloads.download({
-        url,
-        filename: `${folderName}/qa-recording-summary.txt`,
-        saveAs: false
-    });
-
-    URL.revokeObjectURL(url);
-    exportScreenshots(folderName);
-}
-
-function buildExportText() {
-    const steps = session.steps || [];
-    const startedAt = session.startedAt ? formatDateTime(session.startedAt) : '-';
-    const stoppedAt = session.stoppedAt ? formatDateTime(session.stoppedAt) : '-';
-    const errorSteps = steps.filter((step) => step.network.length || step.console.length || step.screenshots.length).length;
-    const lines = [];
-    lines.push('QA RECORDING SUMMARY');
-    lines.push('');
-    lines.push(`Started: ${startedAt}`);
-    lines.push(`Stopped: ${stoppedAt}`);
-    lines.push(`Total steps: ${steps.length}`);
-    lines.push(`Error steps: ${errorSteps}`);
-    lines.push('');
-
-    steps.forEach((step, index) => {
-        lines.push(`${index + 1}. ${step.title || 'Untitled action'}`);
-        lines.push(`Time: ${formatDateTime(step.timestamp)}`);
-        lines.push(`Selector: ${step.selector || '-'}`);
-        lines.push(`Network errors: ${step.network.length}`);
-        lines.push(`Console errors: ${step.console.length}`);
-        lines.push(`Screenshots: ${step.screenshots.length}`);
-
-        if (step.network.length) {
-            lines.push('Network details:');
-            step.network.forEach((entry) => {
-                lines.push(`- ${entry.method || '-'} ${formatStatus(entry)} ${entry.url || '-'}`);
-                lines.push(`  Response: ${(entry.responseBody || '-').replace(/\s+/g, ' ').slice(0, 500)}`);
-            });
-        }
-
-        if (step.console.length) {
-            lines.push('Console details:');
-            step.console.forEach((entry) => {
-                lines.push(`- Component: ${entry.componentLabel || '-'} / ${entry.component || '-'}`);
-                lines.push(`  Message: ${entry.message || '-'}`);
-            });
-        }
-
-        lines.push('');
-    });
-
-    return lines.join('\n');
-}
-
-function exportScreenshots(folderName) {
-    const screenshots = [];
-    (session.steps || []).forEach((step, stepIndex) => {
-        (step.screenshots || []).forEach((shot, shotIndex) => {
-            const safeStepName = toFileSafeName(step.title || `step-${stepIndex + 1}`);
-            screenshots.push({
-                ...shot,
-                name: `${folderName}/${String(stepIndex + 1).padStart(2, '0')}-${safeStepName}-ss-${shotIndex + 1}.png`
-            });
-        });
-    });
-
-    if (!screenshots.length) return;
-
-    screenshots.forEach((shot) => {
-        chrome.downloads.download({
-            url: shot.url,
-            filename: shot.name,
-            saveAs: false
-        });
-    });
-}
-
-function toFileSafeName(value) {
-    return (value || 'step')
-        .toString()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 60) || 'step';
-}
-
-function getStepListItems() {
-    const steps = session.steps || [];
-    if (!steps.length) return [];
-
-    const items = [...steps];
-    if (!session.isRecording) {
-        items.push(buildSummaryItem());
-    }
-    return items;
-}
-
-function buildSummaryItem() {
-    const steps = session.steps || [];
-    const startedAt = session.startedAt ? formatTime(session.startedAt) : '-';
-    const stoppedAt = session.stoppedAt ? formatTime(session.stoppedAt) : '-';
-
-    return {
-        id: SUMMARY_STEP_ID,
-        title: 'Recording Summary',
-        subtitle: `Start ${startedAt} / Stop ${stoppedAt}`,
-        selector: 'All recorded clicks in order',
-        timeLabel: 'Summary',
-        network: [],
-        console: [],
-        screenshots: [],
-        timestamp: session.stoppedAt || Date.now()
-    };
-}
-
 document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -669,34 +510,12 @@ document.addEventListener('click', (event) => {
     const flowStep = target.closest('.flow-step');
     if (flowStep) {
         selectedStepId = flowStep.getAttribute('data-step-id');
-        activeTab = selectedStepId === SUMMARY_STEP_ID ? 'steps' : 'network';
+        activeTab = 'network';
         render();
         return;
     }
 
     if (target.id === 'copy-bug-report-btn') {
-        const step = getSelectedStep();
-        if (!step || step.id === SUMMARY_STEP_ID) return;
-        navigator.clipboard.writeText(buildBugReport(step)).catch(() => {});
-        return;
-    }
-
-    if (target.id === 'download-bug-report-btn') {
-        const step = getSelectedStep();
-        if (!step || step.id === SUMMARY_STEP_ID) return;
-        downloadTextFile(
-            buildBugReport(step),
-            `bug-report-${toFileSafeName(step.title || 'step')}.txt`
-        );
+        navigator.clipboard.writeText(buildSessionBugReport()).catch(() => {});
     }
 });
-
-function downloadTextFile(content, filename) {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-}

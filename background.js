@@ -127,6 +127,7 @@ async function addStep(tabId, payload) {
         const step = {
             id: stepId,
             title,
+            actionType: payload.actionType || 'click',
             selector: payload.selector || '',
             message: payload.message || '',
             url: payload.url || '',
@@ -226,11 +227,13 @@ function trimItems(items) {
 }
 
 function deriveStepTitle(payload) {
-    if (payload.elementText) return payload.elementText;
-    if (payload.ariaLabel) return payload.ariaLabel;
-    if (payload.name) return payload.name;
-    if (payload.id) return payload.id;
-    return payload.tagName || 'Untitled action';
+    const label = payload.elementText || payload.ariaLabel || payload.titleAttr || payload.placeholder || payload.name || payload.id || payload.tagName || 'Alan';
+
+    if (payload.actionType === 'input') {
+        return `${label} girisi yapildi`;
+    }
+
+    return `${label} tiklandi`;
 }
 
 async function captureScreenshot(windowId) {

@@ -9,11 +9,7 @@ const detailsEmptyEl = document.getElementById('details-empty');
 const detailsViewEl = document.getElementById('details-view');
 const recordingIndicatorEl = document.getElementById('recording-indicator');
 const stepCountEl = document.getElementById('step-count');
-const metricRecordedEl = document.getElementById('metric-recorded');
-const metricErrorsEl = document.getElementById('metric-errors');
-const metricShotsEl = document.getElementById('metric-shots');
 const summaryFailuresEl = document.getElementById('summary-failures');
-const summaryOwnerEl = document.getElementById('summary-owner');
 const summarySeverityEl = document.getElementById('summary-severity');
 const summaryConfidenceEl = document.getElementById('summary-confidence');
 
@@ -126,15 +122,10 @@ function render() {
 function renderHeader() {
     const isRecording = Boolean(session.isRecording);
     const steps = session.steps || [];
-    const errorSteps = steps.filter((step) => hasFailureSignal(step)).length;
-    const totalShots = steps.reduce((count, step) => count + step.screenshots.length, 0);
 
     recordingIndicatorEl.textContent = isRecording ? 'Recording' : 'Idle';
     recordingIndicatorEl.className = `recording-indicator ${isRecording ? 'recording' : 'idle'}`;
     stepCountEl.textContent = String(steps.length);
-    metricRecordedEl.textContent = String(steps.length);
-    metricErrorsEl.textContent = String(errorSteps);
-    metricShotsEl.textContent = String(totalShots);
 }
 
 function renderStepList() {
@@ -145,7 +136,7 @@ function renderStepList() {
 
     steps.forEach((step) => {
         const item = document.createElement('li');
-        item.className = `step-item${step.id === selectedStepId ? ' selected' : ''}`;
+        item.className = `step-item${step.id === selectedStepId ? ' selected' : ''}${hasFailureSignal(step) ? ' has-error' : ''}`;
 
         const button = document.createElement('button');
         button.className = 'step-button';
@@ -197,7 +188,6 @@ function renderDetails() {
     document.getElementById('flow-count').textContent = String((session.steps || []).length);
     document.getElementById('bug-report-count').textContent = String(getSessionBugCount());
     summaryFailuresEl.textContent = String(getSessionBugCount());
-    summaryOwnerEl.textContent = inferLikelyOwner(getFailedSteps());
     summarySeverityEl.textContent = inferSessionSeverity(getFailedSteps(), session.steps || []);
     summaryConfidenceEl.textContent = inferConfidence(getFailedSteps());
     document.getElementById('pinned-evidence').innerHTML = renderPinnedEvidence(step);
@@ -355,7 +345,6 @@ function renderBugReportTab(step) {
                 <button type="button" id="download-bug-package-btn" class="primary-btn">Download Package</button>
             </div>
             <div class="bug-report-meta">
-                <div><span>Likely Owner</span><strong>${escapeHtml(inferLikelyOwner(getFailedSteps()))}</strong></div>
                 <div><span>Severity</span><strong>${escapeHtml(inferSessionSeverity(getFailedSteps(), session.steps || []))}</strong></div>
                 <div><span>Confidence</span><strong>${escapeHtml(inferConfidence(getFailedSteps()))}</strong></div>
                 <div><span>Package</span><strong>TXT + screenshots in one ZIP</strong></div>
@@ -558,7 +547,6 @@ function buildSessionBugReport() {
     const failedSteps = getFailedSteps();
     const headline = buildReportHeadline(failedSteps, steps);
     const impact = buildImpactSummary(failedSteps, steps);
-    const owner = inferLikelyOwner(failedSteps);
     const severity = inferSessionSeverity(failedSteps, steps);
     const expectedOutcome = buildExpectedOutcome(steps, failedSteps);
     const confidence = inferConfidence(failedSteps);
@@ -568,9 +556,7 @@ function buildSessionBugReport() {
         '',
         `Title: ${headline}`,
         `Suggested Severity: ${severity}`,
-        `Likely Owner: ${owner}`,
         `Confidence: ${confidence}`,
-        `Routing Signal: ${buildOwnerReason(owner, failedSteps)}`,
         `Severity Signal: ${buildSeverityReason(severity, failedSteps, steps)}`,
         'Environment: Browser QA Extension Session',
         `Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`,
@@ -726,74 +712,6 @@ function buildImpactSummary(failedSteps, steps) {
     }
 
     return 'Failure evidence was captured during the flow, but the recording continued afterwards. This may indicate a non-blocking issue, degraded experience, or silent regression.';
-}
-
-function inferLikelyOwner(failedSteps) {
-    if (!failedSteps.length) {
-        return 'Unassigned';
-    }
-
-    const hasServerError = failedSteps.some((step) =>
-        step.network.some((entry) => Number.parseInt(entry.status, 10) >= 500)
-    );
-    if (hasServerError) {
-        return 'Backend';
-    }
-
-    const hasFrontendError = failedSteps.some((step) => step.console.length > 0);
-    const hasClientError = failedSteps.some((step) =>
-        step.network.some((entry) => {
-            const status = Number.parseInt(entry.status, 10);
-            return status >= 400 && status < 500;
-        })
-    );
-
-    if (hasFrontendError && hasClientError) {
-        return 'Frontend / Integration';
-    }
-
-    if (hasFrontendError) {
-        return 'Frontend';
-    }
-
-    const hasThirdPartyError = failedSteps.some((step) =>
-        step.network.some((entry) => {
-            const host = getHost(entry.url);
-            const appHost = getHost(step.url);
-            return host && appHost && host !== appHost;
-        })
-    );
-    if (hasThirdPartyError) {
-        return 'Third-party / Integration';
-    }
-
-    if (hasClientError) {
-        return 'Integration';
-    }
-
-    return 'Needs triage';
-}
-
-function buildOwnerReason(owner, failedSteps) {
-    if (owner === 'Backend') {
-        return 'One or more failed requests returned a 5xx status code.';
-    }
-    if (owner === 'Frontend') {
-        return 'Frontend console errors were captured without stronger backend failure signals.';
-    }
-    if (owner === 'Frontend / Integration') {
-        return 'Both console errors and client-side request failures were captured.';
-    }
-    if (owner === 'Third-party / Integration') {
-        return 'At least one failed request targeted an external host.';
-    }
-    if (owner === 'Integration') {
-        return 'Request failures were captured without direct frontend exception evidence.';
-    }
-    if (failedSteps.some((step) => step.assessment && step.assessment.silentFailure)) {
-        return 'User actions completed without visible follow-up or technical error evidence.';
-    }
-    return 'No dominant failure pattern could be inferred automatically.';
 }
 
 function buildSeverityReason(severity, failedSteps, steps) {

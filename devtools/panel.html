@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>QA Panel</title>
+    <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="brand-block">
+                <p class="eyebrow">QA Test Flow</p>
+                <h1>QA Panel</h1>
+                <p class="brand-subtitle">Capture test steps, isolate failures, and review evidence in one place.</p>
+            </div>
+            <div class="topbar-actions">
+                <div class="headline-metrics">
+                    <div class="metric-card">
+                        <span class="metric-label">Recorded</span>
+                        <strong id="metric-recorded">0</strong>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Error Steps</span>
+                        <strong id="metric-errors">0</strong>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Screenshots</span>
+                        <strong id="metric-shots">0</strong>
+                    </div>
+                </div>
+                <span id="recording-indicator" class="recording-indicator idle">Idle</span>
+                <button id="start-btn" class="primary-btn">Start</button>
+                <button id="stop-btn">Stop</button>
+                <button id="clear-btn">Clear</button>
+            </div>
+        </header>
+
+        <main class="workspace">
+            <aside class="steps-pane">
+                <div class="pane-header">
+                    <div>
+                        <h2>Steps</h2>
+                        <p class="pane-description">Recorded interactions</p>
+                    </div>
+                    <span id="step-count" class="count-pill">0</span>
+                </div>
+                <div id="steps-empty" class="empty-panel">
+                    Start recording and click through the product. Each click becomes a QA step.
+                </div>
+                <ul id="step-list" class="step-list"></ul>
+            </aside>
+
+            <section class="details-pane">
+                <div id="details-empty" class="empty-panel details-empty">
+                    Select a step to inspect its network activity, frontend console output, screenshots, and full click flow.
+                </div>
+
+                <div id="details-view" class="details-view hidden">
+                    <div class="details-header">
+                        <div>
+                            <p id="details-kicker" class="eyebrow">Selected Step</p>
+                            <h2 id="step-title">Untitled action</h2>
+                            <p id="details-subtitle" class="details-subtitle">Focused inspection for the selected QA event.</p>
+                        </div>
+                        <div class="step-meta">
+                            <span id="step-time" class="meta-chip"></span>
+                            <span id="step-selector" class="meta-chip selector-chip"></span>
+                        </div>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="network">Network <span id="network-count" class="tab-count">0</span></button>
+                        <button class="tab-btn" data-tab="console">Frontend Console <span id="console-count" class="tab-count">0</span></button>
+                        <button class="tab-btn" data-tab="screenshots">Screenshot <span id="screenshot-count" class="tab-count">0</span></button>
+                        <button class="tab-btn" data-tab="steps">Steps <span id="flow-count" class="tab-count">0</span></button>
+                    </div>
+
+                    <div id="tab-network" class="tab-panel"></div>
+                    <div id="tab-console" class="tab-panel hidden"></div>
+                    <div id="tab-screenshots" class="tab-panel hidden"></div>
+                    <div id="tab-steps" class="tab-panel hidden"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="panel.js"></script>
+</body>
+</html>

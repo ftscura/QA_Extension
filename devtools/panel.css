@@ -50,6 +50,11 @@ button:hover {
     border-color: #33527b;
 }
 
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 button:active {
     transform: translateY(1px);
 }
@@ -422,6 +427,11 @@ button:active {
 .mono {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     word-break: break-word;
+}
+
+.response-cell {
+    max-width: 360px;
+    white-space: pre-wrap;
 }
 
 .status-code.error-text,

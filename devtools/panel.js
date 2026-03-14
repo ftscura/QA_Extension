@@ -13,10 +13,12 @@ const stepCountEl = document.getElementById('step-count');
 const metricRecordedEl = document.getElementById('metric-recorded');
 const metricErrorsEl = document.getElementById('metric-errors');
 const metricShotsEl = document.getElementById('metric-shots');
+const exportBtnEl = document.getElementById('export-btn');
 
 document.getElementById('start-btn').addEventListener('click', startRecording);
 document.getElementById('stop-btn').addEventListener('click', stopRecording);
 document.getElementById('clear-btn').addEventListener('click', clearSession);
+document.getElementById('export-btn').addEventListener('click', exportSummary);
 
 document.querySelectorAll('.tab-btn').forEach((button) => {
     button.addEventListener('click', () => {
@@ -124,6 +126,7 @@ function renderHeader() {
     metricRecordedEl.textContent = String(steps.length);
     metricErrorsEl.textContent = String(errorSteps);
     metricShotsEl.textContent = String(totalShots);
+    exportBtnEl.disabled = isRecording || steps.length === 0;
 }
 
 function renderStepList() {
@@ -236,6 +239,7 @@ function renderNetworkTab(step) {
                     <th>Type</th>
                     <th>Host</th>
                     <th>URL</th>
+                    <th>Response</th>
                     <th>Duration</th>
                 </tr>
             </thead>
@@ -248,6 +252,7 @@ function renderNetworkTab(step) {
                         <td>${escapeHtml(entry.type || '-')}</td>
                         <td class="mono">${escapeHtml(getHost(entry.url))}</td>
                         <td class="mono">${escapeHtml(entry.url || '')}</td>
+                        <td class="mono response-cell">${escapeHtml(entry.responseBody || '-')}</td>
                         <td>${entry.duration != null ? `${entry.duration} ms` : '-'}</td>
                     </tr>
                 `).join('')}
@@ -266,9 +271,11 @@ function renderConsoleTab(step) {
             <thead>
                 <tr>
                     <th>Time</th>
+                    <th>Component</th>
                     <th>Level</th>
                     <th>Title</th>
                     <th>Message</th>
+                    <th>Source</th>
                     <th>Stack</th>
                 </tr>
             </thead>
@@ -276,9 +283,14 @@ function renderConsoleTab(step) {
                 ${step.console.map((entry) => `
                     <tr>
                         <td>${escapeHtml(formatTime(entry.timestamp))}</td>
+                        <td>
+                            <div>${escapeHtml(entry.componentLabel || '-')}</div>
+                            <div class="mono">${escapeHtml(entry.component || '-')}</div>
+                        </td>
                         <td class="console-level ${entry.level === 'error' ? 'error-text' : entry.level === 'warn' ? 'warn-text' : ''}">${escapeHtml((entry.level || '').toUpperCase())}</td>
                         <td>${escapeHtml(entry.title || '')}</td>
                         <td class="mono">${escapeHtml(entry.message || '')}</td>
+                        <td class="mono">${escapeHtml(entry.source || '-')}</td>
                         <td class="mono">${escapeHtml(entry.stack || '-')}</td>
                     </tr>
                 `).join('')}
@@ -392,6 +404,58 @@ function getHost(url) {
     } catch (error) {
         return '-';
     }
+}
+
+function exportSummary() {
+    if (session.isRecording || !(session.steps || []).length) return;
+
+    const lines = [];
+    lines.push('# QA Recording Summary');
+    lines.push('');
+    lines.push(`Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`);
+    lines.push(`Stopped: ${session.stoppedAt ? formatDateTime(session.stoppedAt) : '-'}`);
+    lines.push(`Total steps: ${(session.steps || []).length}`);
+    lines.push('');
+
+    (session.steps || []).forEach((step, index) => {
+        lines.push(`## ${index + 1}. ${step.title || 'Untitled action'}`);
+        lines.push(`- Time: ${formatDateTime(step.timestamp)}`);
+        lines.push(`- Selector: ${step.selector || '-'}`);
+        lines.push(`- Network errors: ${step.network.length}`);
+        lines.push(`- Frontend errors: ${step.console.length}`);
+        lines.push(`- Screenshots: ${step.screenshots.length}`);
+
+        if (step.network.length) {
+            lines.push('- Network details:');
+            step.network.forEach((entry) => {
+                lines.push(`  - ${entry.method} ${entry.status || '-'} ${entry.url}`);
+                if (entry.responseBody) {
+                    lines.push(`    Response: ${entry.responseBody.replace(/\s+/g, ' ').slice(0, 300)}`);
+                }
+            });
+        }
+
+        if (step.console.length) {
+            lines.push('- Frontend errors:');
+            step.console.forEach((entry) => {
+                lines.push(`  - ${entry.title}: ${entry.message}`);
+                lines.push(`    Component: ${entry.componentLabel || '-'} / ${entry.component || '-'}`);
+                if (entry.source) {
+                    lines.push(`    Source: ${entry.source}`);
+                }
+            });
+        }
+
+        lines.push('');
+    });
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `qa-recording-${Date.now()}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
 }
 
 function getStepListItems() {

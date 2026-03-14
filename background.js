@@ -158,6 +158,9 @@ async function appendConsoleEntry(tabId, payload, windowId) {
             title: payload.title || 'Console',
             message: payload.message || '',
             stack: payload.stack || '',
+            source: payload.source || '',
+            component: step.selector || '',
+            componentLabel: step.title || '',
             url: payload.url || '',
             timestamp: payload.timestamp || Date.now()
         };
@@ -194,6 +197,8 @@ async function appendNetworkEntry(tabId, payload) {
             status: payload.status ?? null,
             statusText: payload.statusText || '',
             type: payload.resourceType || payload.type || '',
+            responseBody: payload.responseBody || '',
+            responseMimeType: payload.responseMimeType || '',
             duration: payload.duration ?? null,
             timestamp: payload.timestamp || Date.now()
         });

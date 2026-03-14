@@ -6,18 +6,33 @@ function sendMessage(type, payload) {
     }
 }
 
+let lastMutationAt = Date.now();
+const mutationObserver = new MutationObserver(() => {
+    lastMutationAt = Date.now();
+});
+
+mutationObserver.observe(document.documentElement || document, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true
+});
+
 document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
 
     const metadata = buildElementMetadata(target);
+    const clientActionId = `action_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     sendMessage('qa_click', {
         ...metadata,
+        clientActionId,
         actionType: 'click',
         message: `Clicked ${metadata.selector}`,
         url: window.location.href,
         timestamp: Date.now()
     });
+    scheduleAssessment(clientActionId, 'click', window.location.href);
 }, true);
 
 document.addEventListener('change', (event) => {
@@ -27,13 +42,16 @@ document.addEventListener('change', (event) => {
     }
 
     const metadata = buildElementMetadata(target);
+    const clientActionId = `action_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     sendMessage('qa_click', {
         ...metadata,
+        clientActionId,
         actionType: 'input',
         message: `Updated ${metadata.selector}`,
         url: window.location.href,
         timestamp: Date.now()
     });
+    scheduleAssessment(clientActionId, 'input', window.location.href);
 }, true);
 
 window.addEventListener('message', (event) => {
@@ -91,4 +109,19 @@ function getBestElementText(target) {
     }
 
     return '';
+}
+
+function scheduleAssessment(clientActionId, actionType, startingUrl) {
+    const actionStartedAt = Date.now();
+
+    window.setTimeout(() => {
+        sendMessage('qa_step_assessment', {
+            clientActionId,
+            actionType,
+            startingUrl,
+            endingUrl: window.location.href,
+            urlChanged: startingUrl !== window.location.href,
+            domChanged: lastMutationAt >= actionStartedAt
+        });
+    }, 1400);
 }

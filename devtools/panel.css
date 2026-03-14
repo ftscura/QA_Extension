@@ -324,6 +324,11 @@ button:active {
     border-color: rgba(255, 122, 122, 0.28);
 }
 
+.stat-pill.silent {
+    color: #c7b3ff;
+    border-color: rgba(199, 179, 255, 0.3);
+}
+
 .details-pane {
     padding: 22px;
 }
@@ -551,4 +556,10 @@ button:active {
     color: var(--muted);
     font-size: 12px;
     white-space: nowrap;
+}
+
+.silent-note {
+    color: #c7b3ff;
+    font-size: 12px;
+    white-space: normal;
 }

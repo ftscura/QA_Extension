@@ -114,7 +114,7 @@ function render() {
 function renderHeader() {
     const isRecording = Boolean(session.isRecording);
     const steps = session.steps || [];
-    const errorSteps = steps.filter((step) => step.network.length || step.console.length || step.screenshots.length).length;
+    const errorSteps = steps.filter((step) => hasFailureSignal(step)).length;
     const totalShots = steps.reduce((count, step) => count + step.screenshots.length, 0);
 
     recordingIndicatorEl.textContent = isRecording ? 'Recording' : 'Idle';
@@ -148,6 +148,7 @@ function renderStepList() {
                 <span class="stat-pill network">Network ${step.network.length}</span>
                 <span class="stat-pill console">Console ${step.console.length}</span>
                 <span class="stat-pill screenshot">SS ${step.screenshots.length}</span>
+                ${step.assessment && step.assessment.silentFailure ? '<span class="stat-pill silent">Silent</span>' : ''}
             </div>
         `;
 
@@ -314,6 +315,7 @@ function renderStepsTab() {
                     <span class="flow-content">
                         <strong>${escapeHtml(step.title || 'Untitled action')}</strong>
                         <span class="mono">${escapeHtml(step.selector || step.url || '')}</span>
+                        ${step.assessment && step.assessment.silentFailure ? '<span class="silent-note">No visible follow-up was detected after this action.</span>' : ''}
                     </span>
                     <span class="flow-time">${escapeHtml(formatTime(step.timestamp))}</span>
                 </button>
@@ -400,24 +402,32 @@ function getHost(url) {
 }
 
 function getSessionBugCount() {
-    return (session.steps || []).filter((step) => step.network.length || step.console.length || step.screenshots.length).length;
+    return (session.steps || []).filter((step) => hasFailureSignal(step)).length;
 }
 
 function buildSessionBugReport() {
     const steps = session.steps || [];
-    const failedSteps = steps.filter((step) => step.network.length || step.console.length || step.screenshots.length);
+    const failedSteps = steps.filter((step) => hasFailureSignal(step));
+    const headline = buildReportHeadline(failedSteps, steps);
+    const impact = buildImpactSummary(failedSteps, steps);
 
     return [
         'BUG REPORT',
         '',
-        `Title: QA flow captured ${failedSteps.length} failed step(s) during session`,
+        `Title: ${headline}`,
         `Suggested Severity: ${inferSessionSeverity(failedSteps, steps)}`,
+        `Likely Owner: ${inferLikelyOwner(failedSteps)}`,
         'Environment: Browser QA Extension Session',
         `Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`,
         `Stopped: ${session.stoppedAt ? formatDateTime(session.stoppedAt) : '-'}`,
+        `Total Recorded Steps: ${steps.length}`,
+        `Failed Steps: ${failedSteps.length}`,
+        '',
+        'Summary:',
+        impact,
         '',
         'Flow Steps:',
-        steps.map((item, index) => `${index + 1}. ${item.title || 'Untitled action'}${item.selector ? ` (${item.selector})` : ''}`).join('\n') || '-',
+        steps.map((item, index) => `${index + 1}. ${item.title || 'Untitled action'}`).join('\n') || '-',
         '',
         'Observed Failures:',
         failedSteps.map((step, index) => buildFailureBlock(step, index + 1)).join('\n\n') || '-'
@@ -428,7 +438,7 @@ function buildFailureBlock(step, order) {
     return [
         `${order}. ${step.title || 'Untitled action'}`,
         `   Time: ${formatDateTime(step.timestamp)}`,
-        `   Component: ${step.selector || '-'}`,
+        `   Target: ${step.selector || '-'}`,
         `   Result: ${inferActualResult(step)}`,
         `   Evidence:`,
         indentBlock(buildEvidenceSection(step), '   ')
@@ -437,17 +447,21 @@ function buildFailureBlock(step, order) {
 
 function inferSessionSeverity(failedSteps, allSteps) {
     if (failedSteps.some((step) => step.network.some((entry) => Number(entry.status) >= 500))) {
-        return 'High';
+        return 'High (server-side failure observed)';
+    }
+
+    if (failedSteps.some((step) => step.assessment && step.assessment.silentFailure)) {
+        return 'Medium (user action completed without visible follow-up)';
     }
 
     const lastFailedStep = failedSteps[failedSteps.length - 1];
     const lastStep = allSteps[allSteps.length - 1];
     if (lastFailedStep && lastStep && lastFailedStep.id === lastStep.id && failedSteps.length === 1) {
-        return 'Medium';
+        return 'Medium (failure occurs on the final recorded step)';
     }
 
     if (failedSteps.length) {
-        return 'Low to Medium';
+        return 'Low to Medium (non-blocking errors observed during flow)';
     }
 
     return 'Low';
@@ -464,6 +478,9 @@ function inferActualResult(step) {
     }
     if (step.screenshots.length) {
         parts.push('Screenshot captured during failure.');
+    }
+    if (step.assessment && step.assessment.silentFailure) {
+        parts.push('The action did not trigger a visible UI change, URL transition, or technical failure signal.');
     }
     return parts.join(' ') || 'Failure evidence captured during the selected step.';
 }
@@ -500,7 +517,99 @@ function buildEvidenceSection(step) {
         lines.push(`Screenshots: ${step.screenshots.length} captured`);
     }
 
+    if (step.assessment && step.assessment.silentFailure) {
+        lines.push('Silent failure:');
+        lines.push(`- ${step.assessment.reason}`);
+    }
+
     return lines.join('\n') || '-';
+}
+
+function hasFailureSignal(step) {
+    return Boolean(
+        step &&
+        (
+            step.network.length ||
+            step.console.length ||
+            step.screenshots.length ||
+            (step.assessment && step.assessment.silentFailure)
+        )
+    );
+}
+
+function buildReportHeadline(failedSteps, steps) {
+    if (!failedSteps.length) {
+        return 'No failure evidence captured during the QA session';
+    }
+
+    const firstFailure = failedSteps[0];
+    if (firstFailure.network.length) {
+        const firstNetworkError = firstFailure.network[0];
+        return `${firstFailure.title || 'Flow step'} returned ${formatStatus(firstNetworkError)} during QA flow`;
+    }
+
+    if (firstFailure.console.length) {
+        return `${firstFailure.title || 'Flow step'} triggered a frontend console error during QA flow`;
+    }
+
+    return `${failedSteps.length} failure signal(s) captured across ${steps.length} recorded step(s)`;
+}
+
+function buildImpactSummary(failedSteps, steps) {
+    if (!failedSteps.length) {
+        return 'The recorded session completed without captured failure evidence.';
+    }
+
+    const lastFailedStep = failedSteps[failedSteps.length - 1];
+    const lastStep = steps[steps.length - 1];
+
+    if (lastFailedStep && lastStep && lastFailedStep.id === lastStep.id) {
+        return 'The latest failure appears on the final recorded step, so this issue may block completion of the tested flow.';
+    }
+
+    return 'Failure evidence was captured during the flow, but the recording continued afterwards. This may indicate a non-blocking issue, degraded experience, or silent regression.';
+}
+
+function inferLikelyOwner(failedSteps) {
+    if (!failedSteps.length) {
+        return 'Unassigned';
+    }
+
+    const hasServerError = failedSteps.some((step) =>
+        step.network.some((entry) => Number(entry.status) >= 500)
+    );
+    if (hasServerError) {
+        return 'Backend';
+    }
+
+    const hasFrontendError = failedSteps.some((step) => step.console.length > 0);
+    const hasClientError = failedSteps.some((step) =>
+        step.network.some((entry) => Number(entry.status) >= 400 && Number(entry.status) < 500)
+    );
+
+    if (hasFrontendError && hasClientError) {
+        return 'Frontend / Integration';
+    }
+
+    if (hasFrontendError) {
+        return 'Frontend';
+    }
+
+    const hasThirdPartyError = failedSteps.some((step) =>
+        step.network.some((entry) => {
+            const host = getHost(entry.url);
+            return host && !host.includes(window.location.host);
+        })
+    );
+    if (hasThirdPartyError) {
+        return 'Third-party / Integration';
+    }
+
+    if (hasClientError) {
+        return 'Integration';
+    }
+
+    return 'Needs triage';
 }
 
 document.addEventListener('click', (event) => {

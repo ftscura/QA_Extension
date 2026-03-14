@@ -42,6 +42,10 @@ async function handleMessage(request, sender) {
             if (tabId == null) return { ok: false, error: 'Missing tabId' };
             await appendNetworkEntry(tabId, request.payload);
             return { ok: true };
+        case 'qa_step_assessment':
+            if (tabId == null) return { ok: false, error: 'Missing tabId' };
+            await applyStepAssessment(tabId, request.payload);
+            return { ok: true };
         default:
             return { ok: false, error: `Unknown request type: ${request.type}` };
     }
@@ -128,13 +132,21 @@ async function addStep(tabId, payload) {
             id: stepId,
             title,
             actionType: payload.actionType || 'click',
+            clientActionId: payload.clientActionId || '',
             selector: payload.selector || '',
             message: payload.message || '',
             url: payload.url || '',
             timestamp: payload.timestamp || Date.now(),
             network: [],
             console: [],
-            screenshots: []
+            screenshots: [],
+            assessment: {
+                evaluated: false,
+                domChanged: false,
+                urlChanged: false,
+                silentFailure: false,
+                reason: ''
+            }
         };
 
         session.steps.push(step);
@@ -205,6 +217,28 @@ async function appendNetworkEntry(tabId, payload) {
     });
 }
 
+async function applyStepAssessment(tabId, payload) {
+    await updateSession(tabId, async (session) => {
+        if (!payload || !payload.clientActionId) return;
+
+        const step = session.steps.find((item) => item.clientActionId === payload.clientActionId);
+        if (!step) return;
+
+        const domChanged = Boolean(payload.domChanged);
+        const urlChanged = Boolean(payload.urlChanged);
+        const hasFailureSignals = step.network.length > 0 || step.console.length > 0 || step.screenshots.length > 0;
+        const isSilentFailure = !hasFailureSignals && !domChanged && !urlChanged && step.actionType === 'click';
+
+        step.assessment = {
+            evaluated: true,
+            domChanged,
+            urlChanged,
+            silentFailure: isSilentFailure,
+            reason: isSilentFailure ? 'No visible UI change, URL change, or technical error was captured after the action.' : ''
+        };
+    });
+}
+
 function isNetworkError(payload) {
     if (!payload) return false;
     if (payload.failed) return true;
@@ -227,13 +261,41 @@ function trimItems(items) {
 }
 
 function deriveStepTitle(payload) {
-    const label = payload.elementText || payload.ariaLabel || payload.titleAttr || payload.placeholder || payload.name || payload.id || payload.tagName || 'Alan';
+    const label = normalizeStepLabel(
+        payload.elementText ||
+        payload.ariaLabel ||
+        payload.titleAttr ||
+        payload.placeholder ||
+        payload.name ||
+        payload.id ||
+        payload.tagName ||
+        'Element'
+    );
 
     if (payload.actionType === 'input') {
-        return `${label} girisi yapildi`;
+        return `Entered ${label}`;
     }
 
-    return `${label} tiklandi`;
+    return `Clicked ${label}`;
+}
+
+function normalizeStepLabel(label) {
+    const cleaned = String(label || 'Element')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
+
+    if (!cleaned) return 'Element';
+
+    if (/^[A-Z0-9 _-]+$/.test(cleaned)) {
+        return toTitleCase(cleaned.toLowerCase());
+    }
+
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function toTitleCase(value) {
+    return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 async function captureScreenshot(windowId) {

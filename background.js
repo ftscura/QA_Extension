@@ -1,6 +1,20 @@
 const STORAGE_KEY = 'qa_session_state';
 const MAX_STEPS = 200;
 const MAX_ITEMS_PER_STEP = 100;
+const QA_PANEL_WIDTH = 1480;
+const QA_PANEL_HEIGHT = 980;
+
+chrome.action.onClicked.addListener(async (tab) => {
+    if (!tab || typeof tab.id !== 'number') return;
+
+    const panelUrl = chrome.runtime.getURL(`devtools/panel.html?tabId=${tab.id}`);
+    await chrome.windows.create({
+        url: panelUrl,
+        type: 'popup',
+        width: QA_PANEL_WIDTH,
+        height: QA_PANEL_HEIGHT
+    });
+});
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleMessage(request, sender)

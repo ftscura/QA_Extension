@@ -61,6 +61,8 @@ window.addEventListener('message', (event) => {
     const payload = event.data.payload || {};
     if (payload.channel === 'console') {
         sendMessage('qa_console', payload);
+    } else if (payload.channel === 'network') {
+        sendMessage('qa_network', payload);
     }
 });
 

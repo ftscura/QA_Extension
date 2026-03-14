@@ -46,10 +46,18 @@ async function init() {
 }
 
 async function resolveTabId() {
+    const params = new URLSearchParams(window.location.search);
+    const queryTabId = Number(params.get('tabId'));
+    if (Number.isFinite(queryTabId) && queryTabId > 0) {
+        return queryTabId;
+    }
+
     if (chrome.devtools?.inspectedWindow?.tabId) {
         return chrome.devtools.inspectedWindow.tabId;
     }
-    return null;
+
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return activeTab?.id ?? null;
 }
 
 async function refreshSession() {

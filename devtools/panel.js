@@ -12,6 +12,9 @@ const stepCountEl = document.getElementById('step-count');
 const metricRecordedEl = document.getElementById('metric-recorded');
 const metricErrorsEl = document.getElementById('metric-errors');
 const metricShotsEl = document.getElementById('metric-shots');
+const summaryFailuresEl = document.getElementById('summary-failures');
+const summaryOwnerEl = document.getElementById('summary-owner');
+const summarySeverityEl = document.getElementById('summary-severity');
 
 document.getElementById('start-btn').addEventListener('click', startRecording);
 document.getElementById('stop-btn').addEventListener('click', stopRecording);
@@ -184,6 +187,11 @@ function renderDetails() {
     document.getElementById('screenshot-count').textContent = String(step.screenshots.length);
     document.getElementById('flow-count').textContent = String((session.steps || []).length);
     document.getElementById('bug-report-count').textContent = String(getSessionBugCount());
+    summaryFailuresEl.textContent = String(getSessionBugCount());
+    summaryOwnerEl.textContent = inferLikelyOwner(getFailedSteps());
+    summarySeverityEl.textContent = inferSessionSeverity(getFailedSteps(), session.steps || []);
+    document.getElementById('pinned-evidence').innerHTML = renderPinnedEvidence(step);
+    document.getElementById('timeline-view').innerHTML = renderTimeline(step);
 
     renderTabs();
 }
@@ -334,8 +342,132 @@ function renderBugReportTab(step) {
         <div class="bug-report-shell">
             <div class="bug-report-actions">
                 <button type="button" id="copy-bug-report-btn">Copy Report</button>
+                <button type="button" id="download-bug-package-btn" class="primary-btn">Download Package</button>
+            </div>
+            <div class="bug-report-meta">
+                <div><span>Likely Owner</span><strong>${escapeHtml(inferLikelyOwner(getFailedSteps()))}</strong></div>
+                <div><span>Severity</span><strong>${escapeHtml(inferSessionSeverity(getFailedSteps(), session.steps || []))}</strong></div>
             </div>
             <pre class="bug-report-output">${escapeHtml(report)}</pre>
+        </div>
+    `;
+}
+
+function renderPinnedEvidence(step) {
+    const pinnedItems = [];
+    const firstConsole = step.console[0];
+    const firstNetwork = step.network[0];
+    const firstShot = step.screenshots[0];
+
+    if (firstNetwork) {
+        pinnedItems.push(`
+            <div class="pinned-item danger">
+                <span class="pinned-label">Top Network Failure</span>
+                <strong>${escapeHtml(formatStatus(firstNetwork))}</strong>
+                <div class="pinned-text mono">${escapeHtml(firstNetwork.url || '-')}</div>
+            </div>
+        `);
+    }
+
+    if (firstConsole) {
+        pinnedItems.push(`
+            <div class="pinned-item warning">
+                <span class="pinned-label">Top Console Signal</span>
+                <strong>${escapeHtml(firstConsole.title || 'Console error')}</strong>
+                <div class="pinned-text">${escapeHtml(firstConsole.message || '-')}</div>
+            </div>
+        `);
+    }
+
+    if (step.assessment && step.assessment.silentFailure) {
+        pinnedItems.push(`
+            <div class="pinned-item silent">
+                <span class="pinned-label">Silent Failure</span>
+                <strong>No visible follow-up</strong>
+                <div class="pinned-text">${escapeHtml(step.assessment.reason || '-')}</div>
+            </div>
+        `);
+    }
+
+    if (firstShot) {
+        pinnedItems.push(`
+            <div class="pinned-item success">
+                <span class="pinned-label">Screenshot Evidence</span>
+                <strong>Captured</strong>
+                <div class="pinned-text">${escapeHtml(formatDateTime(firstShot.timestamp))}</div>
+            </div>
+        `);
+    }
+
+    if (!pinnedItems.length) {
+        return `<div class="panel-empty compact">No critical evidence is pinned for this step yet.</div>`;
+    }
+
+    return pinnedItems.join('');
+}
+
+function renderTimeline(step) {
+    const events = [];
+
+    events.push({
+        tone: 'neutral',
+        title: step.title || 'Step action',
+        text: step.selector || step.url || 'Action recorded',
+        time: step.timestamp
+    });
+
+    step.network.forEach((entry) => {
+        events.push({
+            tone: 'danger',
+            title: `${entry.method || 'REQUEST'} ${formatStatus(entry)}`,
+            text: entry.url || '-',
+            time: entry.timestamp
+        });
+    });
+
+    step.console.forEach((entry) => {
+        events.push({
+            tone: 'warning',
+            title: entry.title || 'Console error',
+            text: entry.message || '-',
+            time: entry.timestamp
+        });
+    });
+
+    step.screenshots.forEach((entry) => {
+        events.push({
+            tone: 'success',
+            title: 'Screenshot captured',
+            text: entry.message || 'Visual evidence saved',
+            time: entry.timestamp
+        });
+    });
+
+    if (step.assessment && step.assessment.silentFailure) {
+        events.push({
+            tone: 'silent',
+            title: 'Silent failure detected',
+            text: step.assessment.reason || '-',
+            time: step.timestamp + 1400
+        });
+    }
+
+    events.sort((a, b) => (a.time || 0) - (b.time || 0));
+
+    return `
+        <div class="timeline-list">
+            ${events.map((event) => `
+                <article class="timeline-item ${event.tone}">
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">
+                        <div class="timeline-topline">
+                            <strong>${escapeHtml(event.title)}</strong>
+                            <span>${escapeHtml(formatTime(event.time))}</span>
+                        </div>
+                        <div class="timeline-text">${escapeHtml(event.text)}</div>
+                    </div>
+                </article>
+            `).join('')}
         </div>
     `;
 }
@@ -405,18 +537,27 @@ function getSessionBugCount() {
     return (session.steps || []).filter((step) => hasFailureSignal(step)).length;
 }
 
+function getFailedSteps() {
+    return (session.steps || []).filter((step) => hasFailureSignal(step));
+}
+
 function buildSessionBugReport() {
     const steps = session.steps || [];
-    const failedSteps = steps.filter((step) => hasFailureSignal(step));
+    const failedSteps = getFailedSteps();
     const headline = buildReportHeadline(failedSteps, steps);
     const impact = buildImpactSummary(failedSteps, steps);
+    const owner = inferLikelyOwner(failedSteps);
+    const severity = inferSessionSeverity(failedSteps, steps);
+    const expectedOutcome = buildExpectedOutcome(steps, failedSteps);
 
     return [
         'BUG REPORT',
         '',
         `Title: ${headline}`,
-        `Suggested Severity: ${inferSessionSeverity(failedSteps, steps)}`,
-        `Likely Owner: ${inferLikelyOwner(failedSteps)}`,
+        `Suggested Severity: ${severity}`,
+        `Likely Owner: ${owner}`,
+        `Routing Signal: ${buildOwnerReason(owner, failedSteps)}`,
+        `Severity Signal: ${buildSeverityReason(severity, failedSteps, steps)}`,
         'Environment: Browser QA Extension Session',
         `Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`,
         `Stopped: ${session.stoppedAt ? formatDateTime(session.stoppedAt) : '-'}`,
@@ -425,6 +566,9 @@ function buildSessionBugReport() {
         '',
         'Summary:',
         impact,
+        '',
+        'Expected Outcome:',
+        expectedOutcome,
         '',
         'Flow Steps:',
         steps.map((item, index) => `${index + 1}. ${item.title || 'Untitled action'}`).join('\n') || '-',
@@ -576,7 +720,7 @@ function inferLikelyOwner(failedSteps) {
     }
 
     const hasServerError = failedSteps.some((step) =>
-        step.network.some((entry) => Number(entry.status) >= 500)
+        step.network.some((entry) => Number.parseInt(entry.status, 10) >= 500)
     );
     if (hasServerError) {
         return 'Backend';
@@ -584,7 +728,10 @@ function inferLikelyOwner(failedSteps) {
 
     const hasFrontendError = failedSteps.some((step) => step.console.length > 0);
     const hasClientError = failedSteps.some((step) =>
-        step.network.some((entry) => Number(entry.status) >= 400 && Number(entry.status) < 500)
+        step.network.some((entry) => {
+            const status = Number.parseInt(entry.status, 10);
+            return status >= 400 && status < 500;
+        })
     );
 
     if (hasFrontendError && hasClientError) {
@@ -598,7 +745,8 @@ function inferLikelyOwner(failedSteps) {
     const hasThirdPartyError = failedSteps.some((step) =>
         step.network.some((entry) => {
             const host = getHost(entry.url);
-            return host && !host.includes(window.location.host);
+            const appHost = getHost(step.url);
+            return host && appHost && host !== appHost;
         })
     );
     if (hasThirdPartyError) {
@@ -610,6 +758,65 @@ function inferLikelyOwner(failedSteps) {
     }
 
     return 'Needs triage';
+}
+
+function buildOwnerReason(owner, failedSteps) {
+    if (owner === 'Backend') {
+        return 'One or more failed requests returned a 5xx status code.';
+    }
+    if (owner === 'Frontend') {
+        return 'Frontend console errors were captured without stronger backend failure signals.';
+    }
+    if (owner === 'Frontend / Integration') {
+        return 'Both console errors and client-side request failures were captured.';
+    }
+    if (owner === 'Third-party / Integration') {
+        return 'At least one failed request targeted an external host.';
+    }
+    if (owner === 'Integration') {
+        return 'Request failures were captured without direct frontend exception evidence.';
+    }
+    if (failedSteps.some((step) => step.assessment && step.assessment.silentFailure)) {
+        return 'User actions completed without visible follow-up or technical error evidence.';
+    }
+    return 'No dominant failure pattern could be inferred automatically.';
+}
+
+function buildSeverityReason(severity, failedSteps, steps) {
+    if (severity.startsWith('High')) {
+        return 'A server-side failure was captured, which usually affects core business flow reliability.';
+    }
+
+    if (severity.startsWith('Medium (user action completed without visible follow-up)')) {
+        return 'A user action completed without any visible UI transition, URL change, or explicit error, which suggests a broken or ignored interaction.';
+    }
+
+    const lastFailedStep = failedSteps[failedSteps.length - 1];
+    const lastStep = steps[steps.length - 1];
+    if (severity.startsWith('Medium') && lastFailedStep && lastStep && lastFailedStep.id === lastStep.id) {
+        return 'The final recorded step contains the failure signal, so it may prevent the user from finishing the scenario.';
+    }
+
+    if (severity.startsWith('Low to Medium')) {
+        return 'Failure evidence exists, but the flow continued afterwards, so the impact is likely partial or non-blocking.';
+    }
+
+    return 'No critical failure signal was captured.';
+}
+
+function buildExpectedOutcome(steps, failedSteps) {
+    if (!steps.length) {
+        return 'The tested flow should complete successfully without technical or visual regression signals.';
+    }
+
+    const lastStep = steps[steps.length - 1];
+    const failedFinalStep = failedSteps.length && failedSteps[failedSteps.length - 1].id === lastStep.id;
+
+    if (failedFinalStep) {
+        return `After "${lastStep.title}", the flow should continue to the next expected state without backend failure, frontend error, or stalled UI feedback.`;
+    }
+
+    return 'Each recorded step should trigger its expected UI or navigation response, and the full flow should complete without console errors, failed requests, or silent no-op actions.';
 }
 
 document.addEventListener('click', (event) => {
@@ -626,5 +833,43 @@ document.addEventListener('click', (event) => {
 
     if (target.id === 'copy-bug-report-btn') {
         navigator.clipboard.writeText(buildSessionBugReport()).catch(() => {});
+        return;
+    }
+
+    if (target.id === 'download-bug-package-btn') {
+        downloadBugPackage();
     }
 });
+
+function downloadBugPackage() {
+    const failedSteps = getFailedSteps();
+    if (!failedSteps.length) return;
+
+    const folderName = `qa-bug-package-${Date.now()}`;
+    const reportBlob = new Blob([buildSessionBugReport()], { type: 'text/plain;charset=utf-8' });
+    const reportUrl = URL.createObjectURL(reportBlob);
+
+    chrome.downloads.download({
+        url: reportUrl,
+        filename: `${folderName}/bug-report.txt`,
+        saveAs: false
+    }, () => URL.revokeObjectURL(reportUrl));
+
+    failedSteps.forEach((step, stepIndex) => {
+        (step.screenshots || []).forEach((shot, shotIndex) => {
+            chrome.downloads.download({
+                url: shot.url,
+                filename: `${folderName}/${String(stepIndex + 1).padStart(2, '0')}-${toFileSafeName(step.title || 'step')}-ss-${shotIndex + 1}.png`,
+                saveAs: false
+            });
+        });
+    });
+}
+
+function toFileSafeName(value) {
+    return String(value || 'step')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64) || 'step';
+}

@@ -68,6 +68,32 @@
                         </div>
                     </div>
 
+                    <div class="summary-strip">
+                        <article class="summary-card">
+                            <span class="summary-label">Failure Signals</span>
+                            <strong id="summary-failures">0</strong>
+                        </article>
+                        <article class="summary-card">
+                            <span class="summary-label">Likely Owner</span>
+                            <strong id="summary-owner">Needs triage</strong>
+                        </article>
+                        <article class="summary-card">
+                            <span class="summary-label">Severity</span>
+                            <strong id="summary-severity">Low</strong>
+                        </article>
+                    </div>
+
+                    <section class="evidence-rail">
+                        <article class="evidence-card">
+                            <p class="eyebrow">Pinned Evidence</p>
+                            <div id="pinned-evidence" class="pinned-evidence"></div>
+                        </article>
+                        <article class="evidence-card">
+                            <p class="eyebrow">Timeline</p>
+                            <div id="timeline-view" class="timeline-view"></div>
+                        </article>
+                    </section>
+
                     <div class="tabs">
                         <button class="tab-btn active" data-tab="network">Network <span id="network-count" class="tab-count">0</span></button>
                         <button class="tab-btn" data-tab="console">Console <span id="console-count" class="tab-count">0</span></button>

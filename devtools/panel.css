@@ -346,6 +346,176 @@ button:active {
     margin-bottom: 16px;
 }
 
+.summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.summary-card {
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    background:
+        radial-gradient(circle at top right, rgba(101, 214, 255, 0.1), transparent 38%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+    box-shadow: 0 14px 24px rgba(0, 0, 0, 0.18);
+}
+
+.summary-label {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+}
+
+.summary-card strong {
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.evidence-rail {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.evidence-card {
+    padding: 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background:
+        radial-gradient(circle at top right, rgba(101, 214, 255, 0.08), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+    box-shadow: 0 14px 24px rgba(0, 0, 0, 0.16);
+}
+
+.pinned-evidence {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pinned-item {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.pinned-item.danger {
+    border-color: rgba(255, 127, 139, 0.34);
+}
+
+.pinned-item.warning {
+    border-color: rgba(255, 191, 105, 0.34);
+}
+
+.pinned-item.success {
+    border-color: rgba(88, 214, 178, 0.34);
+}
+
+.pinned-item.silent {
+    border-color: rgba(199, 179, 255, 0.34);
+}
+
+.pinned-label {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+}
+
+.pinned-item strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.pinned-text {
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.timeline-view {
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timeline-item {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 12px;
+    align-items: start;
+}
+
+.timeline-dot {
+    width: 12px;
+    height: 12px;
+    margin-top: 4px;
+    border-radius: 999px;
+    background: var(--muted);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+.timeline-item.danger .timeline-dot {
+    background: var(--danger);
+}
+
+.timeline-item.warning .timeline-dot {
+    background: var(--warning);
+}
+
+.timeline-item.success .timeline-dot {
+    background: var(--success);
+}
+
+.timeline-item.silent .timeline-dot {
+    background: #c7b3ff;
+}
+
+.timeline-content {
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(102, 164, 214, 0.12);
+}
+
+.timeline-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.timeline-topline span {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.timeline-text {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
 .step-meta {
     display: flex;
     gap: 10px;
@@ -449,6 +619,29 @@ button:active {
     margin-bottom: 14px;
 }
 
+.bug-report-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.bug-report-meta div {
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.bug-report-meta span {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+}
+
 .bug-report-output {
     margin: 0;
     padding: 16px;
@@ -499,6 +692,13 @@ button:active {
 .panel-empty {
     padding: 24px;
     color: var(--muted);
+}
+
+.panel-empty.compact {
+    margin: 0;
+    padding: 12px 0 0;
+    border: 0;
+    background: transparent;
 }
 
 .flow-list {

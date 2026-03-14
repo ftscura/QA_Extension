@@ -408,12 +408,16 @@ function exportSummary() {
     const text = buildExportText();
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `qa-recording-${Date.now()}.txt`;
-    link.click();
+    const folderName = `qa-export-${Date.now()}`;
+
+    chrome.downloads.download({
+        url,
+        filename: `${folderName}/qa-recording-summary.txt`,
+        saveAs: false
+    });
+
     URL.revokeObjectURL(url);
-    exportScreenshots();
+    exportScreenshots(folderName);
 }
 
 function buildExportText() {
@@ -460,25 +464,26 @@ function buildExportText() {
     return lines.join('\n');
 }
 
-function exportScreenshots() {
+function exportScreenshots(folderName) {
     const screenshots = [];
     (session.steps || []).forEach((step, stepIndex) => {
         (step.screenshots || []).forEach((shot, shotIndex) => {
             const safeStepName = toFileSafeName(step.title || `step-${stepIndex + 1}`);
             screenshots.push({
                 ...shot,
-                name: `qa-${String(stepIndex + 1).padStart(2, '0')}-${safeStepName}-ss-${shotIndex + 1}.png`
+                name: `${folderName}/${String(stepIndex + 1).padStart(2, '0')}-${safeStepName}-ss-${shotIndex + 1}.png`
             });
         });
     });
 
-    screenshots.forEach((shot, index) => {
-        setTimeout(() => {
-            const link = document.createElement('a');
-            link.href = shot.url;
-            link.download = shot.name;
-            link.click();
-        }, index * 120);
+    if (!screenshots.length) return;
+
+    screenshots.forEach((shot) => {
+        chrome.downloads.download({
+            url: shot.url,
+            filename: shot.name,
+            saveAs: false
+        });
     });
 }
 

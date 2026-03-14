@@ -67,6 +67,9 @@ async function refreshSession() {
 }
 
 async function startRecording() {
+    if (currentTabId == null) {
+        currentTabId = await resolveTabId();
+    }
     if (currentTabId == null) return;
 
     const response = await sendBackgroundMessage('start_recording');
@@ -79,6 +82,9 @@ async function startRecording() {
 }
 
 async function stopRecording() {
+    if (currentTabId == null) {
+        currentTabId = await resolveTabId();
+    }
     if (currentTabId == null) return;
 
     const response = await sendBackgroundMessage('stop_recording');
@@ -90,6 +96,9 @@ async function stopRecording() {
 }
 
 async function clearSession() {
+    if (currentTabId == null) {
+        currentTabId = await resolveTabId();
+    }
     if (currentTabId == null) return;
 
     const response = await sendBackgroundMessage('clear_session');
@@ -103,6 +112,9 @@ async function clearSession() {
 
 async function sendBackgroundMessage(type, extra = {}) {
     try {
+        if (currentTabId == null) {
+            currentTabId = await resolveTabId();
+        }
         return await chrome.runtime.sendMessage({
             type,
             tabId: currentTabId,

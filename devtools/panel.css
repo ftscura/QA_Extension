@@ -441,7 +441,7 @@ button:active {
 
 .evidence-rail {
     display: grid;
-    grid-template-columns: minmax(280px, 360px) 1fr;
+    grid-template-columns: 1fr;
     gap: 14px;
     margin-bottom: 18px;
 }
@@ -454,57 +454,6 @@ button:active {
         radial-gradient(circle at top right, rgba(101, 214, 255, 0.08), transparent 42%),
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
     box-shadow: 0 14px 24px rgba(0, 0, 0, 0.16);
-}
-
-.pinned-evidence {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.pinned-item {
-    padding: 12px 14px;
-    border-radius: 16px;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.03);
-}
-
-.pinned-item.danger {
-    border-color: rgba(255, 127, 139, 0.34);
-}
-
-.pinned-item.warning {
-    border-color: rgba(255, 191, 105, 0.34);
-}
-
-.pinned-item.success {
-    border-color: rgba(88, 214, 178, 0.34);
-}
-
-.pinned-item.silent {
-    border-color: rgba(199, 179, 255, 0.34);
-}
-
-.pinned-label {
-    display: block;
-    color: var(--muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 6px;
-}
-
-.pinned-item strong {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 14px;
-}
-
-.pinned-text {
-    color: var(--text);
-    font-size: 12px;
-    line-height: 1.45;
-    word-break: break-word;
 }
 
 .timeline-view {

@@ -11,7 +11,6 @@ const recordingIndicatorEl = document.getElementById('recording-indicator');
 const stepCountEl = document.getElementById('step-count');
 const summaryFailuresEl = document.getElementById('summary-failures');
 const summarySeverityEl = document.getElementById('summary-severity');
-const summaryConfidenceEl = document.getElementById('summary-confidence');
 
 document.getElementById('start-btn').addEventListener('click', startRecording);
 document.getElementById('stop-btn').addEventListener('click', stopRecording);
@@ -201,8 +200,6 @@ function renderDetails() {
     document.getElementById('bug-report-count').textContent = String(getSessionBugCount());
     summaryFailuresEl.textContent = String(getSessionBugCount());
     summarySeverityEl.textContent = inferSessionSeverity(getFailedSteps(), session.steps || []);
-    summaryConfidenceEl.textContent = inferConfidence(getFailedSteps());
-    document.getElementById('pinned-evidence').innerHTML = renderPinnedEvidence(step);
     document.getElementById('timeline-view').innerHTML = renderTimeline(step);
 
     renderTabs();
@@ -358,65 +355,11 @@ function renderBugReportTab(step) {
             </div>
             <div class="bug-report-meta">
                 <div><span>Severity</span><strong>${escapeHtml(inferSessionSeverity(getFailedSteps(), session.steps || []))}</strong></div>
-                <div><span>Confidence</span><strong>${escapeHtml(inferConfidence(getFailedSteps()))}</strong></div>
                 <div><span>Package</span><strong>TXT + screenshots in one ZIP</strong></div>
             </div>
             <pre class="bug-report-output">${escapeHtml(report)}</pre>
         </div>
     `;
-}
-
-function renderPinnedEvidence(step) {
-    const pinnedItems = [];
-    const firstConsole = step.console[0];
-    const firstNetwork = step.network[0];
-    const firstShot = step.screenshots[0];
-
-    if (firstNetwork) {
-        pinnedItems.push(`
-            <div class="pinned-item danger">
-                <span class="pinned-label">Top Network Failure</span>
-                <strong>${escapeHtml(formatStatus(firstNetwork))}</strong>
-                <div class="pinned-text mono">${escapeHtml(firstNetwork.url || '-')}</div>
-            </div>
-        `);
-    }
-
-    if (firstConsole) {
-        pinnedItems.push(`
-            <div class="pinned-item warning">
-                <span class="pinned-label">Top Console Signal</span>
-                <strong>${escapeHtml(firstConsole.title || 'Console error')}</strong>
-                <div class="pinned-text">${escapeHtml(firstConsole.message || '-')}</div>
-            </div>
-        `);
-    }
-
-    if (step.assessment && step.assessment.silentFailure) {
-        pinnedItems.push(`
-            <div class="pinned-item silent">
-                <span class="pinned-label">Silent Failure</span>
-                <strong>No visible follow-up</strong>
-                <div class="pinned-text">${escapeHtml(step.assessment.reason || '-')}</div>
-            </div>
-        `);
-    }
-
-    if (firstShot) {
-        pinnedItems.push(`
-            <div class="pinned-item success">
-                <span class="pinned-label">Screenshot Evidence</span>
-                <strong>Captured</strong>
-                <div class="pinned-text">${escapeHtml(formatDateTime(firstShot.timestamp))}</div>
-            </div>
-        `);
-    }
-
-    if (!pinnedItems.length) {
-        return `<div class="panel-empty compact">No critical evidence is pinned for this step yet.</div>`;
-    }
-
-    return pinnedItems.join('');
 }
 
 function renderTimeline(step) {
@@ -561,14 +504,12 @@ function buildSessionBugReport() {
     const impact = buildImpactSummary(failedSteps, steps);
     const severity = inferSessionSeverity(failedSteps, steps);
     const expectedOutcome = buildExpectedOutcome(steps, failedSteps);
-    const confidence = inferConfidence(failedSteps);
 
     return [
         'BUG REPORT',
         '',
         `Title: ${headline}`,
         `Suggested Severity: ${severity}`,
-        `Confidence: ${confidence}`,
         `Severity Signal: ${buildSeverityReason(severity, failedSteps, steps)}`,
         'Environment: Browser QA Extension Session',
         `Started: ${session.startedAt ? formatDateTime(session.startedAt) : '-'}`,
@@ -664,7 +605,7 @@ function buildEvidenceSection(step) {
         step.network.forEach((entry) => {
             lines.push(`- ${entry.method || '-'} ${formatStatus(entry)} ${entry.url || '-'}`);
             if (entry.responseBody) {
-                lines.push(`  Response: ${entry.responseBody.replace(/\s+/g, ' ').slice(0, 500)}`);
+                lines.push(`  Backend Response: ${entry.responseBody.replace(/\s+/g, ' ').slice(0, 500)}`);
             }
         });
     }
@@ -748,31 +689,6 @@ function buildSeverityReason(severity, failedSteps, steps) {
     return 'No critical failure signal was captured.';
 }
 
-function inferConfidence(failedSteps) {
-    if (!failedSteps.length) {
-        return 'Low confidence';
-    }
-
-    const hasServerError = failedSteps.some((step) =>
-        step.network.some((entry) => Number.parseInt(entry.status, 10) >= 500)
-    );
-    const hasConsoleError = failedSteps.some((step) => step.console.length > 0);
-    const hasSilentFailure = failedSteps.some((step) => step.assessment && step.assessment.silentFailure);
-
-    if (hasServerError) {
-        return 'High confidence';
-    }
-
-    if (hasConsoleError && !hasSilentFailure) {
-        return 'Medium to high confidence';
-    }
-
-    if (hasSilentFailure) {
-        return 'Medium confidence';
-    }
-
-    return 'Medium confidence';
-}
 
 function buildExpectedOutcome(steps, failedSteps) {
     if (!steps.length) {

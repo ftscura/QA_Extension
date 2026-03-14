@@ -275,8 +275,6 @@ function renderConsoleTab(step) {
                     <th>Level</th>
                     <th>Title</th>
                     <th>Message</th>
-                    <th>Source</th>
-                    <th>Stack</th>
                 </tr>
             </thead>
             <tbody>
@@ -290,8 +288,6 @@ function renderConsoleTab(step) {
                         <td class="console-level ${entry.level === 'error' ? 'error-text' : entry.level === 'warn' ? 'warn-text' : ''}">${escapeHtml((entry.level || '').toUpperCase())}</td>
                         <td>${escapeHtml(entry.title || '')}</td>
                         <td class="mono">${escapeHtml(entry.message || '')}</td>
-                        <td class="mono">${escapeHtml(entry.source || '-')}</td>
-                        <td class="mono">${escapeHtml(entry.stack || '-')}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -409,112 +405,69 @@ function getHost(url) {
 function exportSummary() {
     if (session.isRecording || !(session.steps || []).length) return;
 
-    const html = buildExportHtml();
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const text = buildExportText();
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `qa-recording-${Date.now()}.html`;
+    link.download = `qa-recording-${Date.now()}.txt`;
     link.click();
     URL.revokeObjectURL(url);
     exportScreenshots();
 }
 
-function buildExportHtml() {
+function buildExportText() {
     const steps = session.steps || [];
     const startedAt = session.startedAt ? formatDateTime(session.startedAt) : '-';
     const stoppedAt = session.stoppedAt ? formatDateTime(session.stoppedAt) : '-';
     const errorSteps = steps.filter((step) => step.network.length || step.console.length || step.screenshots.length).length;
+    const lines = [];
+    lines.push('QA RECORDING SUMMARY');
+    lines.push('');
+    lines.push(`Started: ${startedAt}`);
+    lines.push(`Stopped: ${stoppedAt}`);
+    lines.push(`Total steps: ${steps.length}`);
+    lines.push(`Error steps: ${errorSteps}`);
+    lines.push('');
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>QA Recording Summary</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 24px; color: #122033; }
-        h1, h2, h3 { margin-bottom: 8px; }
-        .meta { margin-bottom: 24px; padding: 16px; background: #f3f7fb; border-radius: 12px; }
-        .step { margin-bottom: 24px; padding: 16px; border: 1px solid #d7e3f0; border-radius: 12px; }
-        .block { margin-top: 14px; }
-        .pill { display: inline-block; margin-right: 8px; padding: 4px 8px; border-radius: 999px; background: #eef6ff; color: #1263a9; font-size: 12px; }
-        pre { white-space: pre-wrap; word-break: break-word; background: #0f1720; color: #e8eef5; padding: 12px; border-radius: 8px; overflow: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e1e8f0; vertical-align: top; }
-        th { background: #f8fbff; }
-    </style>
-</head>
-<body>
-    <h1>QA Recording Summary</h1>
-    <div class="meta">
-        <div><strong>Started:</strong> ${escapeHtml(startedAt)}</div>
-        <div><strong>Stopped:</strong> ${escapeHtml(stoppedAt)}</div>
-        <div><strong>Total steps:</strong> ${steps.length}</div>
-        <div><strong>Error steps:</strong> ${errorSteps}</div>
-    </div>
-    ${steps.map((step, index) => `
-        <section class="step">
-            <h2>${index + 1}. ${escapeHtml(step.title || 'Untitled action')}</h2>
-            <div class="pill">Time ${escapeHtml(formatDateTime(step.timestamp))}</div>
-            <div class="pill">Selector ${escapeHtml(step.selector || '-')}</div>
-            <div class="pill">Network ${step.network.length}</div>
-            <div class="pill">Console ${step.console.length}</div>
-            <div class="pill">SS ${step.screenshots.length}</div>
+    steps.forEach((step, index) => {
+        lines.push(`${index + 1}. ${step.title || 'Untitled action'}`);
+        lines.push(`Time: ${formatDateTime(step.timestamp)}`);
+        lines.push(`Selector: ${step.selector || '-'}`);
+        lines.push(`Network errors: ${step.network.length}`);
+        lines.push(`Console errors: ${step.console.length}`);
+        lines.push(`Screenshots: ${step.screenshots.length}`);
 
-            ${step.network.length ? `
-                <div class="block">
-                    <h3>Network Errors</h3>
-                    <table>
-                        <thead>
-                            <tr><th>Method</th><th>Status</th><th>URL</th><th>Response</th></tr>
-                        </thead>
-                        <tbody>
-                            ${step.network.map((entry) => `
-                                <tr>
-                                    <td>${escapeHtml(entry.method || '-')}</td>
-                                    <td>${escapeHtml(formatStatus(entry))}</td>
-                                    <td>${escapeHtml(entry.url || '-')}</td>
-                                    <td><pre>${escapeHtml(entry.responseBody || '-')}</pre></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            ` : ''}
+        if (step.network.length) {
+            lines.push('Network details:');
+            step.network.forEach((entry) => {
+                lines.push(`- ${entry.method || '-'} ${formatStatus(entry)} ${entry.url || '-'}`);
+                lines.push(`  Response: ${(entry.responseBody || '-').replace(/\s+/g, ' ').slice(0, 500)}`);
+            });
+        }
 
-            ${step.console.length ? `
-                <div class="block">
-                    <h3>Console Errors</h3>
-                    <table>
-                        <thead>
-                            <tr><th>Component</th><th>Message</th><th>Source</th><th>Stack</th></tr>
-                        </thead>
-                        <tbody>
-                            ${step.console.map((entry) => `
-                                <tr>
-                                    <td>${escapeHtml(entry.componentLabel || '-')}<br><small>${escapeHtml(entry.component || '-')}</small></td>
-                                    <td>${escapeHtml(entry.message || '-')}</td>
-                                    <td>${escapeHtml(entry.source || '-')}</td>
-                                    <td><pre>${escapeHtml(entry.stack || '-')}</pre></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            ` : ''}
-        </section>
-    `).join('')}
-</body>
-</html>`;
+        if (step.console.length) {
+            lines.push('Console details:');
+            step.console.forEach((entry) => {
+                lines.push(`- Component: ${entry.componentLabel || '-'} / ${entry.component || '-'}`);
+                lines.push(`  Message: ${entry.message || '-'}`);
+            });
+        }
+
+        lines.push('');
+    });
+
+    return lines.join('\n');
 }
 
 function exportScreenshots() {
     const screenshots = [];
     (session.steps || []).forEach((step, stepIndex) => {
         (step.screenshots || []).forEach((shot, shotIndex) => {
+            const safeStepName = toFileSafeName(step.title || `step-${stepIndex + 1}`);
             screenshots.push({
                 ...shot,
-                name: `qa-step-${stepIndex + 1}-shot-${shotIndex + 1}.png`
+                name: `qa-${String(stepIndex + 1).padStart(2, '0')}-${safeStepName}-ss-${shotIndex + 1}.png`
             });
         });
     });
@@ -527,6 +480,15 @@ function exportScreenshots() {
             link.click();
         }, index * 120);
     });
+}
+
+function toFileSafeName(value) {
+    return (value || 'step')
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'step';
 }
 
 function getStepListItems() {

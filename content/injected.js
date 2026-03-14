@@ -11,7 +11,7 @@
         }
     }
 
-    function emitConsole(level, title, message, stack, source) {
+    function emitConsole(level, title, message) {
         window.postMessage({
             source: SOURCE,
             payload: {
@@ -19,8 +19,6 @@
                 level,
                 title,
                 message,
-                stack: stack || '',
-                source: source || '',
                 url: window.location.href,
                 timestamp: Date.now()
             }
@@ -37,9 +35,7 @@
             emitConsole(
                 levelLabel,
                 `Console ${levelLabel}`,
-                args.map((arg) => safeSerialize(arg)).join(' '),
-                errorArg && errorArg.stack ? errorArg.stack : '',
-                ''
+                args.map((arg) => safeSerialize(arg)).join(' ')
             );
         };
     }
@@ -50,9 +46,7 @@
         emitConsole(
             'error',
             'Uncaught Exception',
-            event.message || 'Unknown error',
-            event.error && event.error.stack ? event.error.stack : '',
-            event.filename ? `${event.filename}:${event.lineno || 0}:${event.colno || 0}` : ''
+            event.message || 'Unknown error'
         );
     });
 
@@ -61,9 +55,7 @@
         emitConsole(
             'error',
             'Unhandled Promise Rejection',
-            reason ? safeSerialize(reason) : 'Unknown rejection',
-            reason && reason.stack ? reason.stack : '',
-            ''
+            reason ? safeSerialize(reason) : 'Unknown rejection'
         );
     });
 })();

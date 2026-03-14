@@ -157,8 +157,6 @@ async function appendConsoleEntry(tabId, payload, windowId) {
             level: payload.level || 'error',
             title: payload.title || 'Console',
             message: payload.message || '',
-            stack: payload.stack || '',
-            source: payload.source || '',
             component: step.selector || '',
             componentLabel: step.title || '',
             url: payload.url || '',

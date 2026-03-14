@@ -6,6 +6,11 @@
     <link rel="stylesheet" href="panel.css">
 </head>
 <body>
+    <div class="ambient-backdrop">
+        <div class="ambient-orb orb-a"></div>
+        <div class="ambient-orb orb-b"></div>
+        <div class="ambient-orb orb-c"></div>
+    </div>
     <div class="app-shell">
         <header class="topbar">
             <div class="brand-block">
@@ -28,6 +33,7 @@
                         <strong id="metric-shots">0</strong>
                     </div>
                 </div>
+                <div class="workspace-badge">Investigation Workspace</div>
                 <span id="recording-indicator" class="recording-indicator idle">Idle</span>
                 <button id="start-btn" class="primary-btn">Start</button>
                 <button id="stop-btn">Stop</button>
@@ -80,6 +86,10 @@
                         <article class="summary-card">
                             <span class="summary-label">Severity</span>
                             <strong id="summary-severity">Low</strong>
+                        </article>
+                        <article class="summary-card">
+                            <span class="summary-label">Confidence</span>
+                            <strong id="summary-confidence">Review needed</strong>
                         </article>
                     </div>
 

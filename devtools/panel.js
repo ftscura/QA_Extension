@@ -15,6 +15,7 @@ const metricShotsEl = document.getElementById('metric-shots');
 const summaryFailuresEl = document.getElementById('summary-failures');
 const summaryOwnerEl = document.getElementById('summary-owner');
 const summarySeverityEl = document.getElementById('summary-severity');
+const summaryConfidenceEl = document.getElementById('summary-confidence');
 
 document.getElementById('start-btn').addEventListener('click', startRecording);
 document.getElementById('stop-btn').addEventListener('click', stopRecording);
@@ -190,6 +191,7 @@ function renderDetails() {
     summaryFailuresEl.textContent = String(getSessionBugCount());
     summaryOwnerEl.textContent = inferLikelyOwner(getFailedSteps());
     summarySeverityEl.textContent = inferSessionSeverity(getFailedSteps(), session.steps || []);
+    summaryConfidenceEl.textContent = inferConfidence(getFailedSteps());
     document.getElementById('pinned-evidence').innerHTML = renderPinnedEvidence(step);
     document.getElementById('timeline-view').innerHTML = renderTimeline(step);
 
@@ -347,6 +349,8 @@ function renderBugReportTab(step) {
             <div class="bug-report-meta">
                 <div><span>Likely Owner</span><strong>${escapeHtml(inferLikelyOwner(getFailedSteps()))}</strong></div>
                 <div><span>Severity</span><strong>${escapeHtml(inferSessionSeverity(getFailedSteps(), session.steps || []))}</strong></div>
+                <div><span>Confidence</span><strong>${escapeHtml(inferConfidence(getFailedSteps()))}</strong></div>
+                <div><span>Package</span><strong>TXT + screenshots in one ZIP</strong></div>
             </div>
             <pre class="bug-report-output">${escapeHtml(report)}</pre>
         </div>
@@ -549,6 +553,7 @@ function buildSessionBugReport() {
     const owner = inferLikelyOwner(failedSteps);
     const severity = inferSessionSeverity(failedSteps, steps);
     const expectedOutcome = buildExpectedOutcome(steps, failedSteps);
+    const confidence = inferConfidence(failedSteps);
 
     return [
         'BUG REPORT',
@@ -556,6 +561,7 @@ function buildSessionBugReport() {
         `Title: ${headline}`,
         `Suggested Severity: ${severity}`,
         `Likely Owner: ${owner}`,
+        `Confidence: ${confidence}`,
         `Routing Signal: ${buildOwnerReason(owner, failedSteps)}`,
         `Severity Signal: ${buildSeverityReason(severity, failedSteps, steps)}`,
         'Environment: Browser QA Extension Session',
@@ -804,6 +810,32 @@ function buildSeverityReason(severity, failedSteps, steps) {
     return 'No critical failure signal was captured.';
 }
 
+function inferConfidence(failedSteps) {
+    if (!failedSteps.length) {
+        return 'Low confidence';
+    }
+
+    const hasServerError = failedSteps.some((step) =>
+        step.network.some((entry) => Number.parseInt(entry.status, 10) >= 500)
+    );
+    const hasConsoleError = failedSteps.some((step) => step.console.length > 0);
+    const hasSilentFailure = failedSteps.some((step) => step.assessment && step.assessment.silentFailure);
+
+    if (hasServerError) {
+        return 'High confidence';
+    }
+
+    if (hasConsoleError && !hasSilentFailure) {
+        return 'Medium to high confidence';
+    }
+
+    if (hasSilentFailure) {
+        return 'Medium confidence';
+    }
+
+    return 'Medium confidence';
+}
+
 function buildExpectedOutcome(steps, failedSteps) {
     if (!steps.length) {
         return 'The tested flow should complete successfully without technical or visual regression signals.';
@@ -837,33 +869,38 @@ document.addEventListener('click', (event) => {
     }
 
     if (target.id === 'download-bug-package-btn') {
-        downloadBugPackage();
+        downloadBugPackage().catch(() => {});
     }
 });
 
-function downloadBugPackage() {
+async function downloadBugPackage() {
     const failedSteps = getFailedSteps();
     if (!failedSteps.length) return;
 
-    const folderName = `qa-bug-package-${Date.now()}`;
-    const reportBlob = new Blob([buildSessionBugReport()], { type: 'text/plain;charset=utf-8' });
-    const reportUrl = URL.createObjectURL(reportBlob);
-
-    chrome.downloads.download({
-        url: reportUrl,
-        filename: `${folderName}/bug-report.txt`,
-        saveAs: false
-    }, () => URL.revokeObjectURL(reportUrl));
-
-    failedSteps.forEach((step, stepIndex) => {
-        (step.screenshots || []).forEach((shot, shotIndex) => {
-            chrome.downloads.download({
-                url: shot.url,
-                filename: `${folderName}/${String(stepIndex + 1).padStart(2, '0')}-${toFileSafeName(step.title || 'step')}-ss-${shotIndex + 1}.png`,
-                saveAs: false
-            });
-        });
+    const files = [];
+    files.push({
+        name: 'bug-report.txt',
+        bytes: encodeTextFile(buildSessionBugReport())
     });
+
+    for (let stepIndex = 0; stepIndex < failedSteps.length; stepIndex += 1) {
+        const step = failedSteps[stepIndex];
+        for (let shotIndex = 0; shotIndex < (step.screenshots || []).length; shotIndex += 1) {
+            const shot = step.screenshots[shotIndex];
+            files.push({
+                name: `${String(stepIndex + 1).padStart(2, '0')}-${toFileSafeName(step.title || 'step')}-ss-${shotIndex + 1}.png`,
+                bytes: dataUrlToBytes(shot.url)
+            });
+        }
+    }
+
+    const zipBlob = createZipBlob(files);
+    const zipUrl = URL.createObjectURL(zipBlob);
+    chrome.downloads.download({
+        url: zipUrl,
+        filename: `qa-bug-package-${Date.now()}.zip`,
+        saveAs: false
+    }, () => URL.revokeObjectURL(zipUrl));
 }
 
 function toFileSafeName(value) {
@@ -872,4 +909,106 @@ function toFileSafeName(value) {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
         .slice(0, 64) || 'step';
+}
+
+function encodeTextFile(content) {
+    return new TextEncoder().encode(content);
+}
+
+function dataUrlToBytes(dataUrl) {
+    const parts = String(dataUrl || '').split(',');
+    const base64 = parts[1] || '';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+}
+
+function createZipBlob(files) {
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+
+    files.forEach((file) => {
+        const fileNameBytes = encodeTextFile(file.name);
+        const fileBytes = file.bytes instanceof Uint8Array ? file.bytes : new Uint8Array(file.bytes);
+        const crc = crc32(fileBytes);
+
+        const localHeader = new Uint8Array(30 + fileNameBytes.length);
+        const localView = new DataView(localHeader.buffer);
+        localView.setUint32(0, 0x04034b50, true);
+        localView.setUint16(4, 20, true);
+        localView.setUint16(6, 0, true);
+        localView.setUint16(8, 0, true);
+        localView.setUint16(10, 0, true);
+        localView.setUint16(12, 0, true);
+        localView.setUint32(14, crc >>> 0, true);
+        localView.setUint32(18, fileBytes.length, true);
+        localView.setUint32(22, fileBytes.length, true);
+        localView.setUint16(26, fileNameBytes.length, true);
+        localView.setUint16(28, 0, true);
+        localHeader.set(fileNameBytes, 30);
+
+        localParts.push(localHeader, fileBytes);
+
+        const centralHeader = new Uint8Array(46 + fileNameBytes.length);
+        const centralView = new DataView(centralHeader.buffer);
+        centralView.setUint32(0, 0x02014b50, true);
+        centralView.setUint16(4, 20, true);
+        centralView.setUint16(6, 20, true);
+        centralView.setUint16(8, 0, true);
+        centralView.setUint16(10, 0, true);
+        centralView.setUint16(12, 0, true);
+        centralView.setUint16(14, 0, true);
+        centralView.setUint32(16, crc >>> 0, true);
+        centralView.setUint32(20, fileBytes.length, true);
+        centralView.setUint32(24, fileBytes.length, true);
+        centralView.setUint16(28, fileNameBytes.length, true);
+        centralView.setUint16(30, 0, true);
+        centralView.setUint16(32, 0, true);
+        centralView.setUint16(34, 0, true);
+        centralView.setUint16(36, 0, true);
+        centralView.setUint32(38, 0, true);
+        centralView.setUint32(42, offset, true);
+        centralHeader.set(fileNameBytes, 46);
+
+        centralParts.push(centralHeader);
+        offset += localHeader.length + fileBytes.length;
+    });
+
+    const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+    const endRecord = new Uint8Array(22);
+    const endView = new DataView(endRecord.buffer);
+    endView.setUint32(0, 0x06054b50, true);
+    endView.setUint16(4, 0, true);
+    endView.setUint16(6, 0, true);
+    endView.setUint16(8, files.length, true);
+    endView.setUint16(10, files.length, true);
+    endView.setUint32(12, centralSize, true);
+    endView.setUint32(16, offset, true);
+    endView.setUint16(20, 0, true);
+
+    return new Blob([...localParts, ...centralParts, endRecord], { type: 'application/zip' });
+}
+
+const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) {
+            c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        table[n] = c >>> 0;
+    }
+    return table;
+})();
+
+function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let index = 0; index < bytes.length; index += 1) {
+        crc = CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
 }

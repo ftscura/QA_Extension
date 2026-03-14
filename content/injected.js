@@ -1,4 +1,7 @@
 (function() {
+    if (window.__qaExtensionInjectedLoaded) return;
+    window.__qaExtensionInjectedLoaded = true;
+
     const SOURCE = 'qa_extension_injected';
 
     function safeSerialize(value) {

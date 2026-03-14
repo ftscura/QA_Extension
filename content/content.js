@@ -1,3 +1,6 @@
+if (!window.__qaExtensionContentLoaded) {
+window.__qaExtensionContentLoaded = true;
+
 function sendMessage(type, payload) {
     try {
         chrome.runtime.sendMessage({ type, payload });
@@ -126,4 +129,6 @@ function scheduleAssessment(clientActionId, actionType, startingUrl) {
             domChanged: lastMutationAt >= actionStartedAt
         });
     }, 1400);
+}
+
 }

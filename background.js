@@ -96,6 +96,8 @@ function normalizeSession(state, tabId) {
 async function startRecording(tabId) {
     if (tabId == null) return { ok: false, error: 'Missing tabId' };
 
+    await ensureTrackingScripts(tabId);
+
     const state = await getSessionState();
     const session = createEmptySession(tabId);
     session.isRecording = true;
@@ -104,6 +106,17 @@ async function startRecording(tabId) {
     await setSessionState(state);
     await broadcastSession(tabId, session);
     return { ok: true, session };
+}
+
+async function ensureTrackingScripts(tabId) {
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content/content.js']
+        });
+    } catch (error) {
+        console.error('QA Extension: failed to inject tracking script', error);
+    }
 }
 
 async function stopRecording(tabId) {
